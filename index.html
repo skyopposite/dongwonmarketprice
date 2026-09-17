@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>원자재 데일리 브리프</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;900&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<style>
+  :root{
+    --bg: #ffffff;
+    --surface: #f7f7f9;
+    --surface-raised: #eff0f3;
+    --line: #e1e3e8;
+    --line-soft: #edeef2;
+    --text: #16181d;
+    --text-dim: #5b6270;
+    --text-faint: #8b93a1;
+    --up: #d95a2b;      /* 가격 상승 = 경계 신호(hot) */
+    --down: #2b7da6;     /* 가격 하락 = 원가 완화(cool) */
+    --flat: #8b93a1;
+    --molten-1: #e8683a;
+    --molten-2: #f2a640;
+    --radius-s: 3px;
+  }
+
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0;
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Noto Sans KR', sans-serif;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .num{font-family:'IBM Plex Mono', monospace;}
+
+  a{color:inherit;}
+
+  .wrap{
+    max-width:1180px;
+    margin:0 auto;
+    padding:0 28px;
+  }
+
+  /* ---------- HEADER ---------- */
+  header{
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg, #ffffff 0%, #f7f7f9 100%);
+  }
+  .head-top{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-end;
+    padding:38px 0 22px;
+    gap:20px;
+    flex-wrap:wrap;
+  }
+  .brand-label{
+    font-size:12px;
+    letter-spacing:.14em;
+    color:var(--text-faint);
+    margin-bottom:10px;
+  }
+  h1{
+    font-size:34px;
+    font-weight:900;
+    margin:0;
+    letter-spacing:-.01em;
+    position:relative;
+    display:inline-block;
+    padding-bottom:14px;
+  }
+  h1::after{
+    content:"";
+    position:absolute;
+    left:0; bottom:0;
+    width:64px; height:4px;
+    background:linear-gradient(90deg, var(--molten-1), var(--molten-2));
+    border-radius:2px;
+  }
+  .timestamp{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    color:var(--text-dim);
+    text-align:right;
+  }
+
+  /* 날짜 선택 드롭다운 스타일 추가 */
+  .date-select-wrap {
+    margin-bottom: 6px;
+  }
+  .date-select {
+    font-family: 'IBM Plex Mono', 'Noto Sans KR', sans-serif;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-s);
+    padding: 4px 10px;
+    cursor: pointer;
+    outline: none;
+    transition: border-color .15s ease;
+  }
+  .date-select:hover, .date-select:focus {
+    border-color: var(--molten-1);
+  }
+
+  /* ---------- TICKER ---------- */
+  .ticker-shell{
+    border-bottom:1px solid var(--line);
+    background:var(--surface);
+    overflow:hidden;
+    position:relative;
+  }
+  .ticker-shell::before,
+  .ticker-shell::after{
+    content:"";
+    position:absolute; top:0; bottom:0;
+    width:60px; z-index:2; pointer-events:none;
+  }
+  .ticker-shell::before{ left:0; background:linear-gradient(90deg, var(--surface), transparent);}
+  .ticker-shell::after{ right:0; background:linear-gradient(-90deg, var(--surface), transparent);}
+  .ticker-track{
+    display:flex;
+    width:max-content;
+    animation:scroll 34s linear infinite;
+  }
+  .ticker-track:hover{ animation-play-state:paused; }
+  @keyframes scroll{
+    from{ transform:translateX(0); }
+    to{ transform:translateX(-50%); }
+  }
+  .ticker-item{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:11px 26px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    white-space:nowrap;
+    border-right:1px solid var(--line-soft);
+  }
+  .ticker-item .t-name{ color:var(--text-dim); }
+  .ticker-item .t-val{ color:var(--text); font-weight:500;}
+  .ticker-item .t-chg.up{ color:var(--up); }
+  .ticker-item .t-chg.down{ color:var(--down); }
+  @media (prefers-reduced-motion: reduce){
+    .ticker-track{ animation:none; overflow-x:auto; }
+  }
+
+  /* ---------- SECTIONS ---------- */
+  section{
+    padding:52px 0;
+    border-bottom:1px solid var(--line);
+  }
+  section:last-of-type{ border-bottom:none; }
+
+  .sec-head{
+    display:flex;
+    align-items:baseline;
+    gap:14px;
+    margin-bottom:26px;
+  }
+  .sec-index{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    color:var(--text-faint);
+  }
+  .sec-head h2{
+    font-size:22px;
+    margin:0;
+    font-weight:700;
+    letter-spacing:-.01em;
+  }
+  .sec-sub{
+    color:var(--text-dim);
+    font-size:14px;
+    margin:-14px 0 26px;
+  }
+
+  /* ---------- SUMMARY ---------- */
+  .summary-box{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-left:3px solid var(--molten-1);
+    border-radius:var(--radius-s);
+    padding:28px 30px;
+    font-size:15.5px;
+    color:#3a3f47;
+    line-height:1.85;
+  }
+  .summary-box strong{ color:var(--text); font-weight:600; }
+
+  /* ---------- MATERIALS TABLE + INDEX ---------- */
+  .materials-grid{
+    display:grid;
+    grid-template-columns:1.55fr 1fr;
+    gap:22px;
+    align-items:stretch;
+  }
+  @media (max-width:860px){
+    .materials-grid{ grid-template-columns:1fr; }
+  }
+
+  table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13.5px;
+  }
+  thead th{
+    text-align:right;
+    font-weight:500;
+    font-size:12px;
+    color:var(--text-faint);
+    padding:9px 12px;
+    border-bottom:1px solid var(--line);
+    letter-spacing:.02em;
+    white-space:nowrap;
+  }
+  thead th:first-child, tbody td:first-child{ text-align:left; }
+  tbody td{
+    text-align:right;
+    padding:11px 12px;
+    border-bottom:1px solid var(--line-soft);
+    font-family:'IBM Plex Mono', monospace;
+    white-space:nowrap;
+  }
+  tbody tr:last-child td{ border-bottom:none; }
+  tbody td:first-child{
+    font-family:'Noto Sans KR', sans-serif;
+    color:var(--text);
+    font-weight:500;
+  }
+  .table-card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius-s);
+    overflow-x:auto;
+  }
+  .table-card table{ min-width:520px; }
+
+  .diverge{ color:#c9540f; font-weight:600; }
+  .row-note{
+    font-size:11px;
+    color:var(--text-faint);
+    font-family:'Noto Sans KR', sans-serif;
+  }
+
+  .material-row{ cursor:pointer; transition:background-color .12s ease; }
+  .material-row:hover{ background-color:var(--surface-raised); }
+  .material-row:hover .history-btn{ background:var(--molten-1); color:#fff; border-color:var(--molten-1); }
+  .history-btn{
+    display:inline-flex;
+    align-items:center;
+    gap:4px;
+    padding:5px 12px;
+    border-radius:14px;
+    border:1px solid var(--line);
+    background:var(--surface);
+    color:var(--text-dim);
+    font-family:'Noto Sans KR', sans-serif;
+    font-size:12px;
+    font-weight:600;
+    white-space:nowrap;
+    pointer-events:none;
+  }
+
+  /* -------- 자재 이력 모달 -------- */
+  .modal-overlay{
+    display:none;
+    position:fixed; inset:0;
+    background:rgba(20,23,28,.45);
+    z-index:100;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+  }
+  .modal-overlay.open{ display:flex; }
+  .modal-box{
+    background:var(--bg);
+    border:1px solid var(--line);
+    border-radius:6px;
+    max-width:640px;
+    width:100%;
+    max-height:80vh;
+    overflow-y:auto;
+    padding:28px 30px;
+  }
+  .modal-box .modal-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:baseline;
+    margin-bottom:6px;
+  }
+  .modal-box h3{ margin:0; font-size:19px; font-weight:700; }
+  .modal-close{
+    background:none; border:none; font-size:22px; line-height:1;
+    color:var(--text-faint); cursor:pointer; padding:0 4px;
+  }
+  .modal-sub{ color:var(--text-dim); font-size:13px; margin:0 0 20px; }
+  .modal-chart-wrap{ background:var(--surface); border:1px solid var(--line); border-radius:4px; padding:16px; }
+  .modal-empty{ color:var(--text-faint); font-size:13px; text-align:center; padding:24px 0; }
+  .modal-table{ width:100%; margin-top:16px; font-size:13px; }
+  .modal-table th, .modal-table td{ padding:6px 8px; text-align:right; border-bottom:1px solid var(--line-soft); font-family:'IBM Plex Mono', monospace; }
+  .modal-table th:first-child, .modal-table td:first-child{ text-align:left; font-family:'Noto Sans KR', sans-serif; }
+
+
+  .index-card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius-s);
+    padding:22px 24px;
+    display:flex;
+    flex-direction:column;
+    justify-content:space-between;
+  }
+  .index-card h3{
+    font-size:13px;
+    color:var(--text-dim);
+    font-weight:500;
+    margin:0 0 6px;
+  }
+  .index-card .big{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:30px;
+    font-weight:600;
+    color:var(--text);
+  }
+  .index-card .big span{
+    font-size:14px;
+    color:var(--up);
+    margin-left:8px;
+    font-weight:500;
+  }
+  .spark-labels{
+    display:flex;
+    justify-content:space-between;
+    font-size:11px;
+    color:var(--text-faint);
+    font-family:'IBM Plex Mono', monospace;
+    margin-top:2px;
+  }
+
+  /* ---------- NEWS ---------- */
+  .news-grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:0 40px;
+  }
+  @media (max-width:760px){ .news-grid{ grid-template-columns:1fr; } }
+  .news-col h3{
+    font-size:13px;
+    color:var(--text-faint);
+    letter-spacing:.05em;
+    font-weight:600;
+    padding-bottom:12px;
+    border-bottom:1px solid var(--line);
+    margin:0 0 4px;
+  }
+  .news-item{
+    padding:18px 0;
+    border-bottom:1px solid var(--line-soft);
+  }
+  .news-col .news-item:last-child{ border-bottom:none; }
+  .news-item .headline{
+    font-size:15px;
+    font-weight:600;
+    margin:0 0 6px;
+  }
+  .news-item .desc{
+    font-size:13.5px;
+    color:var(--text-dim);
+    margin:0;
+  }
+
+  /* ---------- DB CENTER TABS ---------- */
+  .tabs{
+    display:flex;
+    gap:4px;
+    margin-bottom:0;
+    border-bottom:1px solid var(--line);
+  }
+  .tab-btn{
+    background:none;
+    border:none;
+    color:var(--text-faint);
+    font-family:'Noto Sans KR', sans-serif;
+    font-size:14px;
+    font-weight:600;
+    padding:10px 18px;
+    cursor:pointer;
+    position:relative;
+    top:1px;
+    border-bottom:2px solid transparent;
+  }
+  .tab-btn.active{
+    color:var(--text);
+    border-bottom:2px solid var(--molten-1);
+  }
+  .tab-panel{ display:none; padding-top:20px; }
+  .tab-panel.active{ display:block; }
+  .table-card.wide table{ min-width:900px; font-size:12.8px;}
+  .table-card.wide td, .table-card.wide th{ padding:9px 10px; }
+
+  /* ---------- KEY INDICATORS ---------- */
+  .kpi-grid{
+    display:grid;
+    grid-template-columns:repeat(5, 1fr);
+    gap:16px;
+  }
+  @media (max-width:900px){ .kpi-grid{ grid-template-columns:repeat(2,1fr); } }
+  @media (max-width:520px){ .kpi-grid{ grid-template-columns:1fr; } }
+  .kpi-card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:var(--radius-s);
+    padding:20px 20px 18px;
+  }
+  .kpi-card .kpi-name{
+    font-size:13px;
+    color:var(--text-dim);
+    margin-bottom:14px;
+  }
+  .kpi-card .kpi-val{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:24px;
+    font-weight:600;
+  }
+  .kpi-card .kpi-unit{
+    font-size:12px;
+    color:var(--text-faint);
+    margin-left:4px;
+  }
+  .kpi-card .kpi-chg{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:13px;
+    margin-top:10px;
+    display:inline-block;
+    padding:2px 8px;
+    border-radius:2px;
+  }
+  .kpi-chg.up{ color:var(--up); background:rgba(232,104,58,.12); }
+  .kpi-chg.down{ color:var(--down); background:rgba(79,163,199,.12); }
+  .kpi-chg.flat{ color:var(--flat); background:rgba(107,114,128,.12); }
+
+  /* ---------- FOOTER ---------- */
+  footer{
+    padding:30px 0 50px;
+    color:var(--text-faint);
+    font-size:12.5px;
+    display:flex;
+    justify-content:space-between;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+
+  ::selection{ background:var(--molten-1); color:#ffffff; }
+</style>
+</head>
+<body>
+
+<div id="appContent" style="display:block;">
+
+<header>
+  <div class="wrap head-top">
+    <div>
+      <div class="brand-label">SITE 조달팀 · 내부 배포용</div>
+      <h1>원자재 데일리 브리프</h1>
+    </div>
+    <div class="timestamp">
+      <!-- 우측 상단 날짜 선택 버튼(드롭다운) -->
+      <div class="date-select-wrap">
+        <select id="dateSelect" class="date-select">
+          <option value="">날짜 로딩 중...</option>
+        </select>
+      </div>
+      <span id="lastUpdateTime">--:-- KST 기준 업데이트</span>
+      <div id="syncStatus" style="margin-top:6px; font-size:11px; color:var(--text-faint);">데이터 연결 확인 중...</div>
+    </div>
+  </div>
+
+  <div class="ticker-shell">
+    <div class="ticker-track" id="tickerTrack"></div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <!-- ================= SUMMARY ================= -->
+  <section id="summary">
+    <div class="sec-head">
+      <span class="sec-index">01</span>
+      <h2>오늘의 요약</h2>
+    </div>
+    <div class="summary-box" id="summaryBox">
+      데이터를 불러오는 중입니다...
+      <div style="margin-top:14px; font-size:12px; color:var(--text-faint);" id="summaryFallbackNote">↳ 위 내용은 실시간 연동 데이터입니다.</div>
+    </div>
+  </section>
+
+  <!-- ================= MATERIALS ================= -->
+  <section id="materials">
+    <div class="sec-head">
+      <span class="sec-index">02</span>
+      <h2>주요 자재 현황</h2>
+    </div>
+    <div class="materials-grid">
+      <div class="table-card">
+        <table>
+          <thead>
+            <tr>
+              <th>구분</th>
+              <th>기준가</th>
+              <th>유통가</th>
+              <th>당사 조달가</th>
+              <th>비고</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="material-row" data-material="철근" data-unit="만원/ton">
+              <td>철근</td>
+              <td>102.5만원/ton</td>
+              <td>89만원/ton</td>
+              <td class="diverge">84.5만원/ton</td>
+              <td class="row-note">SD400 기준</td>
+              <td><span class="history-btn">📈 이력보기</span></td>
+            </tr>
+            <tr class="material-row" data-material="형강" data-unit="만원/ton">
+              <td>형강</td>
+              <td>122만원/ton</td>
+              <td>122만원/ton</td>
+              <td class="diverge">116.5만원/ton</td>
+              <td class="row-note">SS275(소형) 기준</td>
+              <td><span class="history-btn">📈 이력보기</span></td>
+            </tr>
+            <tr class="material-row" data-material="레미콘" data-unit="원/㎥">
+              <td>레미콘</td>
+              <td>95,400원/㎥</td>
+              <td>85,100원/㎥</td>
+              <td>85,100원/㎥</td>
+              <td class="row-note">25-24-15 기준</td>
+              <td><span class="history-btn">📈 이력보기</span></td>
+            </tr>
+            <tr class="material-row" data-material="시멘트" data-unit="원/ton">
+              <td>시멘트</td>
+              <td>109,000원/ton</td>
+              <td>102,000원/ton</td>
+              <td>102,000원/ton</td>
+              <td class="row-note">-</td>
+              <td><span class="history-btn">📈 이력보기</span></td>
+            </tr>
+            <tr class="material-row" data-material="레미탈" data-unit="원/ton">
+              <td>레미탈</td>
+              <td>83,000원/ton</td>
+              <td>79,000원/ton</td>
+              <td>79,000원/ton</td>
+              <td class="row-note">-</td>
+              <td><span class="history-btn">📈 이력보기</span></td>
+            </tr>
+            <tr class="material-row" data-material="PHC파일" data-unit="원/m">
+              <td>PHC파일</td>
+              <td>69,600원/m</td>
+              <td>52,200원/m</td>
+              <td>52,200원/m</td>
+              <td class="row-note">D600, 일반 기준</td>
+              <td><span class="history-btn">📈 이력보기</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="index-card">
+        <div>
+          <h3>공사비지수 추이 (2월 – 7월)</h3>
+          <div class="big">138.59<span>+0.18%</span></div>
+        </div>
+        <svg viewBox="0 0 300 80" width="100%" height="90" style="margin-top:14px;">
+          <polyline points="10,70 66,60.4 122,28.3 178,19.8 234,13.1 290,10"
+                    fill="none" stroke="#f2a640" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+          <g fill="#e8683a">
+            <circle cx="10" cy="70" r="2.6"/>
+            <circle cx="66" cy="60.4" r="2.6"/>
+            <circle cx="122" cy="28.3" r="2.6"/>
+            <circle cx="178" cy="19.8" r="2.6"/>
+            <circle cx="234" cy="13.1" r="2.6"/>
+            <circle cx="290" cy="10" r="3.2"/>
+          </g>
+        </svg>
+        <div class="spark-labels">
+          <span>2월</span><span>3월</span><span>4월</span><span>5월</span><span>6월</span><span>7월</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= NEWS ================= -->
+  <section id="news">
+    <div class="sec-head">
+      <span class="sec-index">03</span>
+      <h2>STEEL DAILY · 국내 시황 뉴스</h2>
+    </div>
+    <div class="news-grid">
+      <div class="news-col">
+        <h3>봉형강</h3>
+        <div class="news-item">
+          <p class="headline">中 HGI 수입 확대 조짐...GI 대체 수요 '변수'</p>
+          <p class="desc">중국산 HGI 유입 확대가 GI 수요를 흔들 변수로 부각</p>
+        </div>
+        <div class="news-item">
+          <p class="headline">[BSI-열연] 체감경기 더 '냉각'...가격마저 꺾였다</p>
+          <p class="desc">열연 수요 회복 지연으로 가격 약세 지속</p>
+        </div>
+        <div class="news-item">
+          <p class="headline">[9-1 판재] 기다렸던 9월, 시장은 '시큰둥'</p>
+          <p class="desc">상반기 건설 불황에 흔들린 데크 업계, 수익성 '비상'</p>
+        </div>
+      </div>
+      <div class="news-col">
+        <h3>스크랩 / 원료</h3>
+        <div class="news-item">
+          <p class="headline">[9-1 철 스크랩] 한국 약세 · 국제 시장 방향 턴</p>
+          <p class="desc">철스크랩 약세와 거래 부진, 추가 인하 전망</p>
+        </div>
+        <div class="news-item">
+          <p class="headline">日 스크랩 저평가에도 수입에 미온적인 이유는?</p>
+        </div>
+        <div class="news-item">
+          <p class="headline">中 코크스 옵션 공식 거래 개시…철강 원료 위험관리 수단 확대</p>
+        </div>
+        <div class="news-item">
+          <p class="headline">현대제철, 스크랩 구매가격 인하</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= DB CENTER ================= -->
+  <section id="dbcenter">
+    <div class="sec-head">
+      <span class="sec-index">04</span>
+      <h2>DB CENTER · 국내 가격표</h2>
+    </div>
+    <div class="sec-sub">단위: 천원/ton (괄호는 전주 대비 증감) · 최근 8주</div>
+
+    <div class="tabs">
+      <button class="tab-btn active" data-tab="rebar">철근</button>
+      <button class="tab-btn" data-tab="section">형강</button>
+      <button class="tab-btn" data-tab="scrap">스크랩</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-rebar">
+      <div class="table-card wide">
+        <table>
+          <thead>
+            <tr>
+              <th>날짜</th>
+              <th>유통가 도매<br>즉시현금가</th>
+              <th>건설향 기준가격<br>(구 분기고시가)</th>
+              <th>유통가 소매가</th>
+              <th>유통가 도매<br>정기결제</th>
+              <th>수입유통가<br>즉시현금가</th>
+              <th>수입유통가<br>정기결제</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>2026-08-28</td><td>855 <span class="down">-5</span></td><td>1,025 <span class="flat-txt">–</span></td><td>865 <span class="down">-5</span></td><td>865 <span class="down">-5</span></td><td>810 <span class="down">-10</span></td><td>820 <span class="down">-10</span></td></tr>
+            <tr><td>2026-08-21</td><td>860 <span class="flat-txt">–</span></td><td>1,025 <span class="flat-txt">–</span></td><td>870 <span class="flat-txt">–</span></td><td>870 <span class="flat-txt">–</span></td><td>820 <span class="down">-5</span></td><td>830 <span class="down">-5</span></td></tr>
+            <tr><td>2026-08-14</td><td>860 <span class="down">-5</span></td><td>1,025 <span class="flat-txt">–</span></td><td>870 <span class="down">-5</span></td><td>870 <span class="down">-5</span></td><td>825 <span class="down">-5</span></td><td>835 <span class="down">-5</span></td></tr>
+            <tr><td>2026-08-07</td><td>865 <span class="flat-txt">–</span></td><td>1,025 <span class="up">+23</span></td><td>875 <span class="down">-15</span></td><td>875 <span class="flat-txt">–</span></td><td>830 <span class="flat-txt">–</span></td><td>840 <span class="flat-txt">–</span></td></tr>
+            <tr><td>2026-07-31</td><td>865 <span class="flat-txt">–</span></td><td>1,002 <span class="flat-txt">–</span></td><td>890 <span class="flat-txt">–</span></td><td>875 <span class="flat-txt">–</span></td><td>830 <span class="flat-txt">–</span></td><td>840 <span class="flat-txt">–</span></td></tr>
+            <tr><td>2026-07-24</td><td>865 <span class="down">-10</span></td><td>1,002 <span class="flat-txt">–</span></td><td>890 <span class="flat-txt">–</span></td><td>875 <span class="down">-10</span></td><td>830 <span class="down">-5</span></td><td>840 <span class="down">-5</span></td></tr>
+            <tr><td>2026-07-17</td><td>875 <span class="down">-5</span></td><td>1,002 <span class="flat-txt">–</span></td><td>890 <span class="flat-txt">–</span></td><td>885 <span class="down">-5</span></td><td>835 <span class="down">-5</span></td><td>845 <span class="down">-5</span></td></tr>
+            <tr><td>2026-07-10</td><td>880 <span class="up">+10</span></td><td>1,002 <span class="flat-txt">–</span></td><td>890 <span class="up">+15</span></td><td>890 <span class="up">+10</span></td><td>840 <span class="up">+5</span></td><td>850 <span class="up">+5</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="row-note" style="margin-top:10px;">값이 없는 열 1개는 생략됨</p>
+    </div>
+
+    <div class="tab-panel" id="tab-section">
+      <div class="table-card wide">
+        <table>
+          <thead>
+            <tr>
+              <th>날짜</th>
+              <th>도매 유통가</th>
+              <th>수입유통가<br>중국산</th>
+              <th>수입유통가<br>베트남</th>
+              <th>수입유통가<br>바레인</th>
+              <th>수입유통가<br>일본</th>
+              <th style="text-align:left;">비고</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>2026-08-28</td><td>1,190 <span class="down">-10</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,130 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td class="row-note" style="text-align:left;">-</td></tr>
+            <tr><td>2026-08-21</td><td>1,200 <span class="down">-20</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,130 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td class="row-note" style="text-align:left;">호가 성격이 감함. 혼조세 유의</td></tr>
+            <tr><td>2026-08-14</td><td>1,220 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,130 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td class="row-note" style="text-align:left;">호가 성격이 감함. 혼조세 유의</td></tr>
+            <tr><td>2026-08-07</td><td>1,220 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,130 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td class="row-note" style="text-align:left;">업체별 인상 시점 상이. 혼조세 유의</td></tr>
+            <tr><td>2026-07-31</td><td>1,220 <span class="up">+50</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,130 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td class="row-note" style="text-align:left;">업체별 인상 시점 상이. 혼조세 유의</td></tr>
+            <tr><td>2026-07-24</td><td>1,170 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,130 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td class="row-note" style="text-align:left;">-</td></tr>
+            <tr><td>2026-07-17</td><td>1,170 <span class="down">-20</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,150 <span class="down">-20</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td class="row-note" style="text-align:left;">-</td></tr>
+            <tr><td>2026-07-10</td><td>1,190 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,150 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td>1,060 <span class="flat-txt">–</span></td><td class="row-note" style="text-align:left;">-</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-scrap">
+      <div class="table-card wide">
+        <table>
+          <thead>
+            <tr>
+              <th>날짜</th>
+              <th>美→대만<br>(컨테이너)</th>
+              <th>美 컴포짓가</th>
+              <th>美 중서부<br>1&2</th>
+              <th>터키<br>벌크 수입가</th>
+              <th>일본<br>내수가(백엔)</th>
+              <th>브라질<br>수입가(헤알)</th>
+              <th>동아시아<br>수입가</th>
+              <th>中 장쑤<br>내수가</th>
+              <th>中 HRS101<br>수입가</th>
+              <th>인도<br>수입가</th>
+              <th>터키<br>러시아 수입가</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>2026-09-04</td><td>326 <span class="flat-txt">–</span></td><td>348.3 <span class="flat-txt">–</span></td><td>360 <span class="flat-txt">–</span></td><td>377 <span class="up">+2</span></td><td>450 <span class="down">-4</span></td><td>800 <span class="flat-txt">–</span></td><td>371 <span class="flat-txt">–</span></td><td>360 <span class="flat-txt">–</span></td><td>372 <span class="up">+2</span></td><td>390 <span class="flat-txt">–</span></td><td>345 <span class="flat-txt">–</span></td></tr>
+            <tr><td>2026-08-28</td><td>326 <span class="up">+1</span></td><td>348.3 <span class="flat-txt">–</span></td><td>360 <span class="flat-txt">–</span></td><td>375 <span class="down">-1</span></td><td>454 <span class="down">-7</span></td><td>800 <span class="flat-txt">–</span></td><td>371 <span class="up">+5</span></td><td>360 <span class="up">+1</span></td><td>370 <span class="down">-2</span></td><td>390 <span class="up">+10</span></td><td>345 <span class="flat-txt">–</span></td></tr>
+            <tr><td>2026-08-21</td><td>325 <span class="flat-txt">–</span></td><td>348.3 <span class="down">-10</span></td><td>360 <span class="flat-txt">–</span></td><td>376 <span class="flat-txt">–</span></td><td>461 <span class="down">-25</span></td><td>800 <span class="flat-txt">–</span></td><td>366 <span class="down">-4</span></td><td>359 <span class="flat-txt">–</span></td><td>372 <span class="down">-1</span></td><td>380 <span class="flat-txt">–</span></td><td>345 <span class="flat-txt">–</span></td></tr>
+            <tr><td>2026-08-14</td><td>325 <span class="down">-1</span></td><td>358.3 <span class="flat-txt">–</span></td><td>360 <span class="down">-10</span></td><td>376 <span class="flat-txt">–</span></td><td>486 <span class="flat-txt">–</span></td><td>800 <span class="flat-txt">–</span></td><td>370 <span class="flat-txt">–</span></td><td>359 <span class="flat-txt">–</span></td><td>373 <span class="up">+1</span></td><td>380 <span class="flat-txt">–</span></td><td>345 <span class="flat-txt">–</span></td></tr>
+            <tr><td>2026-08-07</td><td>326 <span class="flat-txt">–</span></td><td>358.3 <span class="flat-txt">–</span></td><td>370 <span class="flat-txt">–</span></td><td>376 <span class="down">-1</span></td><td>486 <span class="down">-6</span></td><td>800 <span class="flat-txt">–</span></td><td>370 <span class="flat-txt">–</span></td><td>359 <span class="up">+1</span></td><td>372 <span class="down">-6</span></td><td>380 <span class="up">+9</span></td><td>345 <span class="flat-txt">–</span></td></tr>
+            <tr><td>2026-07-31</td><td>326 <span class="up">+1</span></td><td>358.3 <span class="flat-txt">–</span></td><td>370 <span class="flat-txt">–</span></td><td>377 <span class="up">+2</span></td><td>492 <span class="down">-2</span></td><td>800 <span class="flat-txt">–</span></td><td>370 <span class="flat-txt">–</span></td><td>358 <span class="up">+1</span></td><td>378 <span class="flat-txt">–</span></td><td>371 <span class="up">+1</span></td><td>345 <span class="flat-txt">–</span></td></tr>
+            <tr><td>2026-07-24</td><td>325 <span class="down">-5</span></td><td>358.3 <span class="down">-5</span></td><td>370 <span class="flat-txt">–</span></td><td>375 <span class="up">+5</span></td><td>494 <span class="down">-4</span></td><td>800 <span class="down">-50</span></td><td>370 <span class="down">-8</span></td><td>357 <span class="down">-1</span></td><td>378 <span class="down">-7</span></td><td>370 <span class="down">-10</span></td><td>345 <span class="down">-2</span></td></tr>
+            <tr><td>2026-07-17</td><td>330 <span class="down">-2</span></td><td>363.7 <span class="down">-1</span></td><td>370 <span class="down">-5</span></td><td>370 <span class="flat-txt">–</span></td><td>498 <span class="down">-5</span></td><td>850 <span class="flat-txt">–</span></td><td>378 <span class="flat-txt">–</span></td><td>358 <span class="down">-5</span></td><td>385 <span class="down">-4</span></td><td>380 <span class="flat-txt">–</span></td><td>347 <span class="flat-txt">–</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="row-note" style="margin-top:10px;">단위: 달러/톤 (일본은 백엔/톤, 브라질은 헤알/톤)</p>
+    </div>
+  </section>
+
+  <!-- ================= KEY INDICATORS ================= -->
+  <section id="key-indicators">
+    <div class="sec-head">
+      <span class="sec-index">05</span>
+      <h2>해외 핵심 지표</h2>
+    </div>
+    <div class="kpi-grid" id="kpiGrid"></div>
+  </section>
+
+  <!-- ================= TRADING ECONOMICS ================= -->
+  <section id="trading-economics">
+    <div class="sec-head">
+      <span class="sec-index">06</span>
+      <h2>TRADING ECONOMICS · 해외 시세</h2>
+    </div>
+    <div class="table-card wide">
+      <table>
+        <thead>
+          <tr>
+            <th style="text-align:left;">품목</th>
+            <th>현재가</th>
+            <th>일간 %</th>
+            <th>주간</th>
+            <th>월간</th>
+            <th>연간</th>
+          </tr>
+        </thead>
+        <tbody id="teBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<footer>
+  <div class="wrap" style="display:flex; justify-content:space-between; width:100%; flex-wrap:wrap; gap:10px;">
+    <span>원자재 데일리 브리프 · SITE 조달팀 내부 배포용</span>
+    <span id="footerSourceText">출처: 사내 DB CENTER, STEEL DAILY, Trading Economics</span>
+  </div>
+</footer>
+
+<script>
+  // -------- Ticker data (해외 핵심 지표) --------
+  const kpis = [
+    { name: 'Iron Ore', val: '99.42', unit: 'USD/T', chg: '+1.74%', dir: 'up' },
+    { name: 'Coking Coal', val: '274.00', unit: 'USD/T', chg: '+0.74%', dir: 'up' },
+    { name: 'Scrap Steel', val: '385.50', unit: 'USD/T', chg: '+0.00%', dir: 'flat' },
+    { name: 'Copper', val: '6.59', unit: 'USD/Lbs', chg: '+1.29%', dir: 'up' },
+    { name: 'Crude Oil', val: '91.85', unit: 'USD/Bbl', chg: '+0.92%', dir: 'up' },
+  ];
+
+  const tickerTrack = document.getElementById('tickerTrack');
+  function tickerHTML(){
+    return kpis.map(k => `
+      <div class="ticker-item">
+        <span class="t-name">${k.name}</span>
+        <span class="t-val">${k.val} ${k.unit}</span>
+        <span class="t-chg ${k.dir}">${k.chg}</span>
+      </div>`).join('');
+  }
+  tickerTrack.innerHTML = tickerHTML() + tickerHTML();
+
+  // -------- KPI cards --------
+  const kpiGrid = document.getElementById('kpiGrid');
+  kpiGrid.innerHTML = kpis.map(k => `
+    <div class="kpi-card">
+      <div class="kpi-name">${k.name}</div>
+      <div class="kpi-val">${k.val}<span class="kpi-unit">${k.unit}</span></div>
+      <div class="kpi-chg ${k.dir}">${k.chg}</div>
+    </div>`).join('');
+
+  // -------- Trading Economics full table --------
+  const te = [
+    ['Iron Ore','USD/T','99.42','+1.74%','+3.91%','+6.10%','-4.89%'],
+    ['Iron Ore CNY','CNY/T','726.50','+1.75%','+1.40%','+3.86%','-7.69%'],
+    ['Coking Coal','USD/T','274.00','+0.74%','+3.01%','+28.94%','+46.52%'],
+    ['Coal','USD/T','147.00','+0.27%','+12.00%','+10.94%','+35.48%'],
+    ['Steel','CNY/T','3,115.00','+0.61%','+0.35%','+4.50%','+1.86%'],
+    ['HRC Steel','USD/T','1,235.00','+0.90%','+4.66%','+3.61%','+54.38%'],
+    ['Scrap Steel','USD/T','385.50','+0.00%','-1.28%','-1.28%','+12.23%'],
+    ['Copper','USD/Lbs','6.59','+1.29%','-0.07%','-0.50%','+46.24%'],
+    ['Aluminum','USD/T','3,319.50','+0.83%','+2.57%','+3.06%','+28.08%'],
+    ['Zinc','USD/T','3,891.90','+0.89%','+0.42%','+6.14%','+37.06%'],
+    ['Nickel','USD/T','16,905','+0.06%','+0.18%','-1.43%','+10.78%'],
+    ['Lead','USD/T','1,905.18','+0.42%','-0.77%','+0.48%','-4.20%'],
+    ['Tin','USD/T','54,232','-0.73%','-1.09%','-2.19%','+56.46%'],
+    ['Crude Oil','USD/Bbl','91.85','+0.92%','+9.96%','+21.22%','+44.69%'],
+    ['Naphtha','USD/T','782.98','+0.13%','+5.18%','+6.88%','+38.56%'],
+    ['Natural gas','USD/MMBtu','2.92','-1.07%','+0.36%','+9.04%','-4.87%'],
+  ];
+
+  function pctSpan(v){
+    const dir = v.trim().startsWith('-') ? 'down' : (v.trim().startsWith('+0.00') ? 'flat' : 'up');
+    return `<span class="t-chg ${dir}" style="font-weight:500;">${v}</span>`;
+  }
+
+  document.getElementById('teBody').innerHTML = te.map(r => `
+    <tr>
+      <td style="text-align:left; font-family:'Noto Sans KR',sans-serif; font-weight:500;">${r[0]}</td>
+      <td>${r[2]} <span class="row-note">${r[1]}</span></td>
+      <td>${pctSpan(r[3])}</td>
+      <td>${pctSpan(r[4])}</td>
+      <td>${pctSpan(r[5])}</td>
+      <td>${pctSpan(r[6])}</td>
+    </tr>`).join('');
+
+  // -------- DB Center tabs --------
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  const MANUAL_HISTORY = {
+    '철근':   [ {date:'2026-01-10', value:72.2}, {date:'2026-02-10', value:72.2}, {date:'2026-03-10', value:74.5}, {date:'2026-04-10', value:74.9}, {date:'2026-05-10', value:74.9}, {date:'2026-06-10', value:77.8}, {date:'2026-07-10', value:80.2}, {date:'2026-08-07', value:82.5}, {date:'2026-09-04', value:82.5} ],
+    '형강':   [ {date:'2026-01-10', value:100}, {date:'2026-02-10', value:103}, {date:'2026-03-10', value:105}, {date:'2026-04-10', value:103.5}, {date:'2026-05-10', value:109}, {date:'2026-06-10', value:113},{date:'2026-07-10', value:113.8}, {date:'2026-08-07', value:115.75}, {date:'2026-09-04', value:112.5} ],
+    '레미콘': [ {date:'2018-04-10', value:66300}, {date:'2020-10-10', value:67700}, {date:'2021-10-10', value:71000}, {date:'2022-05-10', value:80300}, {date:'2023-01-10', value:84500}, {date:'2023-05-10', value:88700},{date:'2024-02-10', value:93700}, {date:'2025-08-07', value:91400}, {date:'2026-09-04', value:95400} ],
+    '시멘트': [ {date:'2018-01-10', value:75000}, {date:'2018-07-10', value:75000}, {date:'2020-10-10', value:75000}, {date:'2021-10-10', value:78800}, {date:'2022-05-10', value:92300}, {date:'2023-05-10', value:105400},{date:'2024-02-10', value:112000}, {date:'2025-03-07', value:110000}, {date:'2026-04-10', value:106000} ],
+    '레미탈': [ {date:'2022-07-10', value:79000}, {date:'2023-03-07', value:77000}, {date:'2024-07-10', value:82000}, {date:'2025-06-10', value:82000}, {date:'2026-09-04', value:82000} ],
+    'PHC파일': [ {date:'2022-01-10', value:44800}, {date:'2023-01-10', value:45200}, {date:'2024-01-07', value:41700}, {date:'2025-09-04', value:46200}, {date:'2026-09-04', value:50300} ]
+  };
+
+  // -------- 실시간 데이터 연동 (Google Sheets CSV) --------
+  const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSXQQpdJ0_yirGXiP5sz3lsmzX7TyiuF60OP_yHHHu6kuMM5sH_SZfmQXwOwC0fnqvGnoaupPS6DUah/pub?output=csv';
+
+  function formatKST(unixSeconds){
+    const d = new Date(unixSeconds * 1000);
+    const y = d.getFullYear();
+    const mo = d.getMonth() + 1;
+    const day = d.getDate();
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return {
+      dateStr: `${y}년 ${mo}월 ${day}일`,
+      timeStr: `${hh}:${mm} KST 기준 업데이트`,
+      fullDateStr: `${y}-${String(mo).padStart(2,'0')}-${String(day).padStart(2,'0')}`
+    };
+  }
+
+  // 선택한 특정 행(날짜)의 데이터를 화면에 적용하는 함수
+  function renderBriefRow(row){
+    if(!row) return;
+
+    const rawDate = row['날짜'];
+    const rawContent = row['내용'];
+
+    if(rawDate){
+      const ts = Number(rawDate);
+      if(!isNaN(ts)){
+        const { dateStr, timeStr, fullDateStr } = formatKST(ts);
+        document.getElementById('lastUpdateTime').textContent = timeStr;
+        document.getElementById('footerSourceText').textContent = `출처: 사내 DB CENTER, STEEL DAILY, Trading Economics · ${fullDateStr}`;
+      }
+    }
+
+    if(rawContent){
+      let summaryText = rawContent;
+      try{
+        const obj = JSON.parse(rawContent);
+        if(obj && obj.commentary) summaryText = obj.commentary;
+      }catch(e){ /* JSON이 아니면 원문 그대로 */ }
+
+      const box = document.getElementById('summaryBox');
+      box.textContent = summaryText;
+    }
+  }
+
+  function loadLatestBrief(){
+    const statusEl = document.getElementById('syncStatus');
+    const dateSelect = document.getElementById('dateSelect');
+
+    fetch(SHEET_CSV_URL, { cache: 'no-store' })
+      .then(res => {
+        if(!res.ok) throw new Error('네트워크 응답 오류: ' + res.status);
+        return res.text();
+      })
+      .then(csvText => {
+        const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true });
+        const rows = parsed.data;
+        window.__briefRows = rows;
+        if(!rows.length) throw new Error('시트에 데이터가 없습니다');
+
+        // 드롭다운 옵션 구성 (최신순으로 나열)
+        dateSelect.innerHTML = '';
+        const validRows = rows.filter(r => r['날짜'] && !isNaN(Number(r['날짜'])));
+        
+        // 역순으로 드롭다운 옵션 생성
+        for(let i = validRows.length - 1; i >= 0; i--){
+          const r = validRows[i];
+          const ts = Number(r['날짜']);
+          const { dateStr } = formatKST(ts);
+          const opt = document.createElement('option');
+          opt.value = i; // row 인덱스
+          opt.textContent = dateStr;
+          dateSelect.appendChild(opt);
+        }
+
+        // 초기 렌더링: 가장 최신 행
+        const latestIdx = validRows.length - 1;
+        renderBriefRow(validRows[latestIdx]);
+
+        // 드롭다운 변경 이벤트 핸들러
+        dateSelect.addEventListener('change', (e) => {
+          const selectedIdx = Number(e.target.value);
+          renderBriefRow(validRows[selectedIdx]);
+        });
+
+        statusEl.textContent = '실시간 연동됨 · ' + rows.length + '건 수신';
+        statusEl.style.color = 'var(--down)';
+      })
+      .catch(err => {
+        console.error('데이터 연동 실패:', err);
+        statusEl.textContent = '실시간 연동 실패 · 초기 예시 데이터 표시 중';
+        statusEl.style.color = 'var(--up)';
+      });
+  }
+
+  loadLatestBrief();
+</script>
+
+<style>
+  .up{ color:var(--up); font-weight:600; }
+  .down{ color:var(--down); font-weight:600; }
+  .flat-txt{ color:var(--flat); }
+</style>
+
+</div>
+
+<!-- ================= 자재 이력 모달 ================= -->
+<div class="modal-overlay" id="materialModal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 id="modalTitle">자재명</h3>
+      <button class="modal-close" id="modalCloseBtn" aria-label="닫기">×</button>
+    </div>
+    <p class="modal-sub" id="modalSub">당사 조달가 누적 추이</p>
+    <div class="modal-chart-wrap" id="modalChartWrap">
+      <div class="modal-empty" id="modalEmptyMsg">아직 누적된 이력 데이터가 없습니다.</div>
+    </div>
+    <table class="modal-table" id="modalTable" style="display:none;">
+      <thead><tr><th>날짜</th><th>당사 조달가</th></tr></thead>
+      <tbody id="modalTableBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  // -------- 자재 이력 모달 --------
+  const materialModal = document.getElementById('materialModal');
+  const modalTitle = document.getElementById('modalTitle');
+  const modalSub = document.getElementById('modalSub');
+  const modalChartWrap = document.getElementById('modalChartWrap');
+  const modalTable = document.getElementById('modalTable');
+  const modalTableBody = document.getElementById('modalTableBody');
+
+  function closeMaterialModal(){
+    materialModal.classList.remove('open');
+  }
+  document.getElementById('modalCloseBtn').addEventListener('click', closeMaterialModal);
+  materialModal.addEventListener('click', (e) => {
+    if(e.target === materialModal) closeMaterialModal();
+  });
+
+  function formatDateShort(unixSeconds){
+    const d = new Date(unixSeconds * 1000);
+    return `${String(d.getFullYear()).slice(2)}.${d.getMonth()+1}.${d.getDate()}`;
+  }
+
+  function drawMaterialChart(points){
+    const w = 560, h = 200, padL = 50, padR = 20, padT = 20, padB = 30;
+    const ys = points.map(p => p.y);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const range = (maxY - minY) || 1;
+    const stepX = points.length > 1 ? (w - padL - padR) / (points.length - 1) : 0;
+
+    const coords = points.map((p, i) => {
+      const x = padL + stepX * i;
+      const y = padT + (h - padT - padB) * (1 - (p.y - minY) / range);
+      return { x, y, label: p.x, val: p.y };
+    });
+
+    const linePoints = coords.map(c => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(' ');
+    const dots = coords.map(c => `<circle cx="${c.x.toFixed(1)}" cy="${c.y.toFixed(1)}" r="3.5" fill="var(--molten-1)"/>`).join('');
+    const labels = coords.map(c => `<text x="${c.x.toFixed(1)}" y="${h-10}" font-size="11" fill="var(--text-faint)" text-anchor="middle" font-family="IBM Plex Mono, monospace">${c.label}</text>`).join('');
+    const yTop = `<text x="${padL-8}" y="${padT+4}" font-size="11" fill="var(--text-faint)" text-anchor="end" font-family="IBM Plex Mono, monospace">${maxY.toLocaleString()}</text>`;
+    const yBottom = `<text x="${padL-8}" y="${h-padB}" font-size="11" fill="var(--text-faint)" text-anchor="end" font-family="IBM Plex Mono, monospace">${minY.toLocaleString()}</text>`;
+
+    return `<svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}">
+      <line x1="${padL}" y1="${padT}" x2="${padL}" y2="${h-padB}" stroke="var(--line)" stroke-width="1"/>
+      <line x1="${padL}" y1="${h-padB}" x2="${w-padR}" y2="${h-padB}" stroke="var(--line)" stroke-width="1"/>
+      ${yTop}${yBottom}
+      <polyline points="${linePoints}" fill="none" stroke="var(--molten-1)" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+      ${dots}
+      ${labels}
+    </svg>`;
+  }
+
+  function openMaterialModal(material, unit){
+    modalTitle.textContent = material;
+    materialModal.classList.add('open');
+
+    const rows = window.__briefRows || [];
+    const colName = `${material}_조달가`;
+
+    let history = rows
+      .filter(r => r[colName] !== undefined && r[colName] !== '' && r['날짜'])
+      .map(r => ({ x: formatDateShort(Number(r['날짜'])), y: Number(r[colName]) }))
+      .filter(p => !isNaN(p.y));
+
+    let isManual = false;
+
+    if(history.length < 2 && MANUAL_HISTORY[material]){
+      history = MANUAL_HISTORY[material].map(p => {
+        const d = new Date(p.date);
+        return { x: `${String(d.getFullYear()).slice(2)}.${d.getMonth()+1}.${d.getDate()}`, y: p.value };
+      });
+      isManual = true;
+    }
+
+    modalSub.textContent = isManual
+      ? `당사 조달가 누적 추이 (${unit}) · 샘플 데이터`
+      : `당사 조달가 누적 추이 (${unit}) · 실시간 연동`;
+
+    if(history.length === 0){
+      modalChartWrap.innerHTML = `<div class="modal-empty">아직 "${material}" 항목의 이력 데이터가 없습니다.</div>`;
+      modalTable.style.display = 'none';
+      return;
+    }
+
+    modalChartWrap.innerHTML = history.length === 1
+      ? `<div class="modal-empty">데이터가 1건뿐이라 아직 그래프를 그리기엔 이릅니다.<br>현재 값: <strong style="color:var(--text);">${history[0].y.toLocaleString()} ${unit}</strong></div>`
+      : drawMaterialChart(history);
+
+    modalTable.style.display = 'table';
+    modalTableBody.innerHTML = history.map(p => `<tr><td>${p.x}</td><td>${p.y.toLocaleString()} ${unit}</td></tr>`).join('');
+  }
+
+  document.querySelectorAll('.material-row').forEach(row => {
+    row.addEventListener('click', () => {
+      openMaterialModal(row.dataset.material, row.dataset.unit);
+    });
+  });
+</script>
+
+</body>
+</html>
